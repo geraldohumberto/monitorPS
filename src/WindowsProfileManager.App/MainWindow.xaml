@@ -14,37 +14,39 @@
                        FontWeight="SemiBold"/>
         </Border>
 
-        <StackPanel DockPanel.Dock="Top" Background="#FFFFFF" Margin="0" Padding="10">
-            <WrapPanel>
-                <Button Content="Varrer este PC" Command="{Binding ScanCommand}"/>
-                <Button Content="Salvar verificacao" Command="{Binding SaveProfileCommand}"/>
-                <Button Content="Carregar arquivo" Command="{Binding LoadProfileCommand}"/>
-                <Button Content="Comparar" Command="{Binding CompareCommand}"/>
-                <Button Content="Aplicar acoes pendentes" Command="{Binding ApplyPendingCommand}"/>
-                <Button Content="Reiniciar como admin" Command="{Binding RestartAsAdminCommand}"/>
-            </WrapPanel>
-            <Grid Margin="4,8,4,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding LoadedProfileName, StringFormat=Perfil carregado: {0}}"/>
-                <TextBlock Grid.Column="1" Text="{Binding AdminStatus}" HorizontalAlignment="Right"/>
-            </Grid>
-            <TextBlock Margin="4,5,4,0">
-                <Run Text="Status: "/>
-                <Run Text="{Binding Summary.ProcessCount}"/>
-                <Run Text=" processos | "/>
-                <Run Text="{Binding Summary.RunningServicesCount}"/>
-                <Run Text=" servicos rodando | "/>
-                <Run Text="{Binding Summary.StartupCount}"/>
-                <Run Text=" inicializacao | "/>
-                <Run Text="{Binding Summary.ExtrasCount}"/>
-                <Run Text=" extras | "/>
-                <Run Text="{Binding Summary.PendingCount}"/>
-                <Run Text=" acoes pendentes"/>
-            </TextBlock>
-        </StackPanel>
+        <Border DockPanel.Dock="Top" Background="#FFFFFF" Padding="10">
+            <StackPanel>
+                <WrapPanel>
+                    <Button Content="Varrer este PC" Command="{Binding ScanCommand}"/>
+                    <Button Content="Salvar verificacao" Command="{Binding SaveProfileCommand}"/>
+                    <Button Content="Carregar arquivo" Command="{Binding LoadProfileCommand}"/>
+                    <Button Content="Comparar" Command="{Binding CompareCommand}"/>
+                    <Button Content="Aplicar acoes pendentes" Command="{Binding ApplyPendingCommand}"/>
+                    <Button Content="Reiniciar como admin" Command="{Binding RestartAsAdminCommand}"/>
+                </WrapPanel>
+                <Grid Margin="4,8,4,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding LoadedProfileName, StringFormat=Perfil carregado: {0}}"/>
+                    <TextBlock Grid.Column="1" Text="{Binding AdminStatus}" HorizontalAlignment="Right"/>
+                </Grid>
+                <TextBlock Margin="4,5,4,0">
+                    <Run Text="Status: "/>
+                    <Run Text="{Binding Summary.ProcessCount}"/>
+                    <Run Text=" processos | "/>
+                    <Run Text="{Binding Summary.RunningServicesCount}"/>
+                    <Run Text=" servicos rodando | "/>
+                    <Run Text="{Binding Summary.StartupCount}"/>
+                    <Run Text=" inicializacao | "/>
+                    <Run Text="{Binding Summary.ExtrasCount}"/>
+                    <Run Text=" extras | "/>
+                    <Run Text="{Binding Summary.PendingCount}"/>
+                    <Run Text=" acoes pendentes"/>
+                </TextBlock>
+            </StackPanel>
+        </Border>
 
         <TabControl Margin="10">
             <TabItem Header="Visao Geral">
