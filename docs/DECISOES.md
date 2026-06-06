@@ -15,8 +15,20 @@
 
 - Processos e servicos essenciais entram em uma lista interna de protecao.
 - Acoes pendentes exigem confirmacao visual antes de aplicar.
+- A aplicacao direta do perfil carregado tambem exige confirmacao visual antes de executar.
 - Processos protegidos nao sao encerrados pelo app.
 - Servicos protegidos nao sao parados nem desativados pelo app.
+- Erros de varredura sao registrados em log e nao devem fechar a janela do aplicativo.
+
+## Aplicacao de perfil
+
+- O arquivo `.json` carregado e tratado como lista de referencia do PC modelo.
+- Antes de aplicar, o usuario pode remover processos, servicos e itens de inicializacao da aba `Perfil Carregado`.
+- Processos extras no PC atual sao encerrados.
+- Servicos extras no PC atual sao parados e desativados.
+- Servicos presentes no perfil carregado recebem o tipo de inicializacao salvo quando o valor e suportado.
+- Itens de inicializacao extras sao desativados quando a fonte permite alteracao automatica.
+- O aplicativo nao tenta criar processos ou instalar servicos ausentes, porque isso depende de software/driver instalado no PC alvo.
 
 ## Formatos
 
