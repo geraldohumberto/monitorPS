@@ -25,6 +25,7 @@ public sealed class MainViewModel : ObservableObject
     private string _loadedProfileName = "nenhum";
     private string _adminStatus = "";
     private string _reportText = "";
+    private bool _isScanning;
 
     public MainViewModel()
     {
@@ -87,6 +88,18 @@ public sealed class MainViewModel : ObservableObject
     public string LoadedProfileName { get => _loadedProfileName; set => SetProperty(ref _loadedProfileName, value); }
     public string AdminStatus { get => _adminStatus; set => SetProperty(ref _adminStatus, value); }
     public string ReportText { get => _reportText; set => SetProperty(ref _reportText, value); }
+    public bool IsScanning
+    {
+        get => _isScanning;
+        set
+        {
+            if (SetProperty(ref _isScanning, value))
+            {
+                OnPropertyChanged(nameof(ScanStatusText));
+            }
+        }
+    }
+    public string ScanStatusText => IsScanning ? "Varrendo este PC..." : "Pronto";
 
     public RelayCommand ScanCommand { get; }
     public RelayCommand SaveProfileCommand { get; }
@@ -117,30 +130,91 @@ public sealed class MainViewModel : ObservableObject
 
     private bool HasScan() => Processes.Count > 0 || Services.Count > 0 || StartupItems.Count > 0;
 
-    private void Scan()
+    private async void Scan()
     {
-        Processes.ReplaceWith(_processScanner.Scan());
-        Services.ReplaceWith(_serviceScanner.Scan());
-        StartupItems.ReplaceWith(_startupScanner.Scan(Services.ToList()));
-
-        _currentProfile = new WindowsProfile
+        if (IsScanning)
         {
-            ProfileName = $"Perfil {Environment.MachineName}",
-            CreatedAt = DateTime.Now,
-            MachineName = Environment.MachineName,
-            OsVersion = Environment.OSVersion.VersionString,
-            Processes = Processes.ToList(),
-            Services = Services.ToList(),
-            StartupItems = StartupItems.ToList()
-        };
-
-        Log($"Varredura concluida: {Processes.Count} processos, {Services.Count} servicos, {StartupItems.Count} inicializacao.");
-        if (_loadedProfile is not null)
-        {
-            Compare();
+            return;
         }
 
-        RefreshSummary();
+        IsScanning = true;
+        Log("Iniciando varredura.");
+
+        var processes = new List<ProcessItem>();
+        var services = new List<ServiceItem>();
+        var startupItems = new List<StartupItem>();
+
+        try
+        {
+            try
+            {
+                processes = await Task.Run(() => _processScanner.Scan().ToList());
+                Processes.ReplaceWith(processes);
+                Log($"Processos varridos: {Processes.Count}.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Write("Falha ao varrer processos.", ex);
+                Log($"Falha ao varrer processos: {ex.Message}");
+            }
+
+            try
+            {
+                services = await Task.Run(() => _serviceScanner.Scan().ToList());
+                Services.ReplaceWith(services);
+                Log($"Servicos varridos: {Services.Count}.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Write("Falha ao varrer servicos.", ex);
+                Log($"Falha ao varrer servicos: {ex.Message}");
+            }
+
+            try
+            {
+                startupItems = await Task.Run(() => _startupScanner.Scan(services).ToList());
+                StartupItems.ReplaceWith(startupItems);
+                Log($"Inicializacao varrida: {StartupItems.Count}.");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Write("Falha ao varrer inicializacao.", ex);
+                Log($"Falha ao varrer inicializacao: {ex.Message}");
+            }
+
+            _currentProfile = new WindowsProfile
+            {
+                ProfileName = $"Perfil {Environment.MachineName}",
+                CreatedAt = DateTime.Now,
+                MachineName = Environment.MachineName,
+                OsVersion = Environment.OSVersion.VersionString,
+                Processes = Processes.ToList(),
+                Services = Services.ToList(),
+                StartupItems = StartupItems.ToList()
+            };
+
+            Log($"Varredura concluida: {Processes.Count} processos, {Services.Count} servicos, {StartupItems.Count} inicializacao.");
+            if (_loadedProfile is not null)
+            {
+                Compare();
+            }
+
+            RefreshSummary();
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Write("Falha inesperada na varredura.", ex);
+            Log($"Falha inesperada na varredura: {ex.Message}");
+            MessageBox.Show(
+                $"A varredura encontrou um erro e continuou com os dados possiveis.\n\nLog: {AppLogger.LogFilePath}\n\n{ex.Message}",
+                "Perfil Windows",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsScanning = false;
+        }
     }
 
     private void SaveProfile()
@@ -424,6 +498,7 @@ public sealed class MainViewModel : ObservableObject
     private void Log(string text)
     {
         _logLines.Insert(0, $"{DateTime.Now:HH:mm:ss} {text}");
+        AppLogger.Write(text);
         RefreshSummary();
     }
 }

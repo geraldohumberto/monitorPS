@@ -14,8 +14,25 @@ public sealed class ProcessScannerService
 
     public IReadOnlyList<ProcessItem> Scan()
     {
-        return Process.GetProcesses()
-            .Select(CreateItem)
+        var items = new List<ProcessItem>();
+
+        foreach (var process in Process.GetProcesses())
+        {
+            try
+            {
+                items.Add(CreateItem(process));
+            }
+            catch
+            {
+                // Processes can exit while Windows is enumerating them. Ignore the vanished item.
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+
+        return items
             .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(p => p.Pid)
             .ToList();
@@ -23,8 +40,9 @@ public sealed class ProcessScannerService
 
     private ProcessItem CreateItem(Process process)
     {
+        var pid = SafeRead(() => process.Id);
         var name = SafeRead(() => process.ProcessName) ?? "";
-        if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && process.Id > 4)
+        if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && pid > 4)
         {
             name += ".exe";
         }
@@ -32,7 +50,7 @@ public sealed class ProcessScannerService
         var item = new ProcessItem
         {
             Name = name,
-            Pid = SafeRead(() => process.Id),
+            Pid = pid,
             CpuSeconds = SafeRead(() => process.TotalProcessorTime.TotalSeconds),
             RamBytes = SafeRead(() => process.WorkingSet64),
             Path = SafeRead(() => process.MainModule?.FileName ?? ""),

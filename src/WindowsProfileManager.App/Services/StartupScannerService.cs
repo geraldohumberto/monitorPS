@@ -58,21 +58,27 @@ public sealed class StartupScannerService
 
     private static void ReadStartupFolder(List<StartupItem> items, string folder, string source)
     {
-        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        try
         {
-            return;
-        }
-
-        foreach (var file in Directory.EnumerateFiles(folder))
-        {
-            items.Add(new StartupItem
+            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             {
-                Name = System.IO.Path.GetFileName(file),
-                Source = source,
-                Enabled = true,
-                Command = file,
-                Allowed = true
-            });
+                return;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(folder))
+            {
+                items.Add(new StartupItem
+                {
+                    Name = System.IO.Path.GetFileName(file),
+                    Source = source,
+                    Enabled = true,
+                    Command = file,
+                    Allowed = true
+                });
+            }
+        }
+        catch
+        {
         }
     }
 }

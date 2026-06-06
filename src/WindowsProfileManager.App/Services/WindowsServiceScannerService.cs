@@ -38,9 +38,10 @@ public sealed class WindowsServiceScannerService
         foreach (var rawLine in output.Split(["\r\n", "\n"], StringSplitOptions.None))
         {
             var line = rawLine.Trim();
-            if (line.StartsWith("SERVICE_NAME:", StringComparison.OrdinalIgnoreCase))
+            var fieldName = GetFieldName(line);
+            if (IsServiceNameField(fieldName))
             {
-                current = new ServiceItem { Name = line["SERVICE_NAME:".Length..].Trim() };
+                current = new ServiceItem { Name = GetFieldValue(line) };
                 result.Add(current);
                 continue;
             }
@@ -50,14 +51,13 @@ public sealed class WindowsServiceScannerService
                 continue;
             }
 
-            if (line.StartsWith("DISPLAY_NAME:", StringComparison.OrdinalIgnoreCase))
+            if (IsDisplayNameField(fieldName))
             {
-                current.DisplayName = line["DISPLAY_NAME:".Length..].Trim();
+                current.DisplayName = GetFieldValue(line);
             }
-            else if (line.StartsWith("STATE", StringComparison.OrdinalIgnoreCase))
+            else if (IsStateField(fieldName))
             {
-                var parts = line.Split(':', 2);
-                current.Status = parts.Length == 2 ? parts[1].Trim() : line;
+                current.Status = GetFieldValue(line);
             }
         }
 
@@ -67,6 +67,50 @@ public sealed class WindowsServiceScannerService
         }
 
         return result;
+    }
+
+    private static string GetFieldName(string line)
+    {
+        var index = line.IndexOf(':');
+        return index < 0 ? line : line[..index].Trim();
+    }
+
+    private static string GetFieldValue(string line)
+    {
+        var index = line.IndexOf(':');
+        return index < 0 ? "" : line[(index + 1)..].Trim();
+    }
+
+    private static string NormalizeFieldName(string fieldName)
+    {
+        return fieldName
+            .Replace("_", " ", StringComparison.Ordinal)
+            .Replace("�", "", StringComparison.Ordinal)
+            .ToUpperInvariant();
+    }
+
+    private static bool IsServiceNameField(string fieldName)
+    {
+        var normalized = NormalizeFieldName(fieldName);
+        return normalized.Equals("SERVICE NAME", StringComparison.Ordinal)
+            || (normalized.Contains("NOME", StringComparison.Ordinal)
+                && normalized.Contains("SERVI", StringComparison.Ordinal)
+                && !normalized.Contains("EXIB", StringComparison.Ordinal));
+    }
+
+    private static bool IsDisplayNameField(string fieldName)
+    {
+        var normalized = NormalizeFieldName(fieldName);
+        return normalized.Equals("DISPLAY NAME", StringComparison.Ordinal)
+            || (normalized.Contains("NOME", StringComparison.Ordinal)
+                && normalized.Contains("EXIB", StringComparison.Ordinal));
+    }
+
+    private static bool IsStateField(string fieldName)
+    {
+        var normalized = NormalizeFieldName(fieldName);
+        return normalized.Equals("STATE", StringComparison.Ordinal)
+            || normalized.Equals("ESTADO", StringComparison.Ordinal);
     }
 
     private static void FillRegistryDetails(ServiceItem service)

@@ -45,6 +45,7 @@
                     <Run Text="{Binding Summary.PendingCount}"/>
                     <Run Text=" acoes pendentes"/>
                 </TextBlock>
+                <TextBlock Margin="4,5,4,0" Text="{Binding ScanStatusText}" Foreground="#566573"/>
             </StackPanel>
         </Border>
 
