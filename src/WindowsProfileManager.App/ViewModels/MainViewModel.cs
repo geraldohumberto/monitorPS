@@ -47,6 +47,10 @@ public sealed class MainViewModel : ObservableObject
         ExportReportCommand = new RelayCommand(ExportReport, HasScan);
         LoadProfileCommand = new RelayCommand(LoadProfile);
         CompareCommand = new RelayCommand(Compare, () => HasScan() && _loadedProfile is not null);
+        ApplyLoadedProfileCommand = new RelayCommand(ApplyLoadedProfile, () => HasScan() && _loadedProfile is not null);
+        RemoveLoadedProcessesCommand = new RelayCommand(RemoveLoadedProcesses);
+        RemoveLoadedServicesCommand = new RelayCommand(RemoveLoadedServices);
+        RemoveLoadedStartupItemsCommand = new RelayCommand(RemoveLoadedStartupItems);
         RestartAsAdminCommand = new RelayCommand(_adminPermission.RestartAsAdministrator);
         KillNowCommand = new RelayCommand(() => KillSelected(Processes.Where(p => p.IsSelected)));
         QueueKillCommand = new RelayCommand(() => QueueProcesses(Processes.Where(p => p.IsSelected)));
@@ -81,6 +85,9 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<ProcessItem> Processes { get; } = [];
     public ObservableCollection<ServiceItem> Services { get; } = [];
     public ObservableCollection<StartupItem> StartupItems { get; } = [];
+    public ObservableCollection<ProcessItem> LoadedProfileProcesses { get; } = [];
+    public ObservableCollection<ServiceItem> LoadedProfileServices { get; } = [];
+    public ObservableCollection<StartupItem> LoadedProfileStartupItems { get; } = [];
     public ObservableCollection<PendingAction> PendingActions { get; } = [];
     public DashboardSummary Summary { get; } = new();
     public ComparisonResult Comparison { get; } = new();
@@ -106,6 +113,10 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ExportReportCommand { get; }
     public RelayCommand LoadProfileCommand { get; }
     public RelayCommand CompareCommand { get; }
+    public RelayCommand ApplyLoadedProfileCommand { get; }
+    public RelayCommand RemoveLoadedProcessesCommand { get; }
+    public RelayCommand RemoveLoadedServicesCommand { get; }
+    public RelayCommand RemoveLoadedStartupItemsCommand { get; }
     public RelayCommand RestartAsAdminCommand { get; }
     public RelayCommand KillNowCommand { get; }
     public RelayCommand QueueKillCommand { get; }
@@ -259,6 +270,7 @@ public sealed class MainViewModel : ObservableObject
 
         _loadedProfile = _serializer.Load(dialog.FileName);
         LoadedProfileName = System.IO.Path.GetFileName(dialog.FileName);
+        RefreshLoadedProfileCollections();
         Log($"Perfil carregado: {LoadedProfileName}.");
 
         if (HasScan())
@@ -274,11 +286,138 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        SyncLoadedProfileFromCollections();
         RefreshCurrentProfile();
         _comparer.Compare(_currentProfile, _loadedProfile);
         RefreshComparison();
         RefreshSummary();
         Log("Comparacao concluida.");
+    }
+
+    private void ApplyLoadedProfile()
+    {
+        if (_loadedProfile is null)
+        {
+            MessageBox.Show("Carregue um perfil JSON antes de aplicar.", "Perfil Windows", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (!HasScan())
+        {
+            MessageBox.Show("Varra este PC antes de aplicar o perfil carregado.", "Perfil Windows", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        SyncLoadedProfileFromCollections();
+        RefreshCurrentProfile();
+        _comparer.Compare(_currentProfile, _loadedProfile);
+
+        var processTargets = Processes
+            .Where(p => p.ComparisonStatus == ComparisonStatus.Extra && !p.IsProtected)
+            .ToList();
+        var serviceExtras = Services
+            .Where(s => s.ComparisonStatus == ComparisonStatus.Extra && !s.IsProtected)
+            .ToList();
+        var serviceStartupTargets = GetServicesWithProfileStartup().ToList();
+        var startupTargets = StartupItems
+            .Where(s => s.ComparisonStatus == ComparisonStatus.Extra && !s.IsProtected)
+            .ToList();
+
+        var protectedCount = Processes.Count(p => p.ComparisonStatus == ComparisonStatus.Extra && p.IsProtected)
+            + Services.Count(s => s.ComparisonStatus == ComparisonStatus.Extra && s.IsProtected)
+            + StartupItems.Count(s => s.ComparisonStatus == ComparisonStatus.Extra && s.IsProtected);
+
+        var message =
+            $"Aplicar o perfil carregado neste PC?\n\n" +
+            $"Processos extras a encerrar: {processTargets.Count}\n" +
+            $"Servicos extras a parar/desativar: {serviceExtras.Count}\n" +
+            $"Servicos do perfil com inicializacao a ajustar: {serviceStartupTargets.Count}\n" +
+            $"Inicializacao extra a desativar: {startupTargets.Count}\n" +
+            $"Itens protegidos que serao ignorados: {protectedCount}\n\n" +
+            "Essa acao mexe no sistema agora.";
+
+        if (MessageBox.Show(message, "Aplicar perfil carregado", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        {
+            Log("Aplicacao do perfil carregado cancelada pelo usuario.");
+            return;
+        }
+
+        Log($"Aplicando perfil carregado: {LoadedProfileName}.");
+
+        foreach (var process in processTargets)
+        {
+            Log(_processKiller.Kill(process));
+        }
+
+        foreach (var service in serviceExtras)
+        {
+            Log(_serviceControl.Stop(service));
+            Log(_serviceControl.SetStartup(service, "disabled"));
+        }
+
+        foreach (var (current, profile) in serviceStartupTargets)
+        {
+            ApplyProfileServiceStartup(current, profile);
+        }
+
+        foreach (var startupItem in startupTargets)
+        {
+            Log(_startupControl.Disable(startupItem));
+        }
+
+        Log("Aplicacao do perfil carregado concluida.");
+        Scan();
+    }
+
+    private IEnumerable<(ServiceItem Current, ServiceItem Profile)> GetServicesWithProfileStartup()
+    {
+        if (_loadedProfile is null)
+        {
+            yield break;
+        }
+
+        foreach (var current in Services.Where(s => !s.IsProtected))
+        {
+            var profile = _loadedProfile.Services.FirstOrDefault(s => s.Name.Equals(current.Name, StringComparison.OrdinalIgnoreCase));
+            if (profile is null || string.IsNullOrWhiteSpace(profile.StartupType))
+            {
+                continue;
+            }
+
+            if (IsSupportedStartupType(profile.StartupType)
+                && !profile.StartupType.Equals(current.StartupType, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return (current, profile);
+            }
+        }
+    }
+
+    private void ApplyProfileServiceStartup(ServiceItem current, ServiceItem profile)
+    {
+        if (profile.StartupType.Equals("Desativado", StringComparison.OrdinalIgnoreCase))
+        {
+            Log(_serviceControl.Stop(current));
+            Log(_serviceControl.SetStartup(current, "disabled"));
+            return;
+        }
+
+        if (profile.StartupType.Equals("Manual", StringComparison.OrdinalIgnoreCase))
+        {
+            Log(_serviceControl.SetStartup(current, "demand"));
+            return;
+        }
+
+        if (profile.StartupType.Equals("Automatico", StringComparison.OrdinalIgnoreCase))
+        {
+            Log(_serviceControl.SetStartup(current, "auto"));
+        }
+    }
+
+    private static bool IsSupportedStartupType(string startupType)
+    {
+        return startupType.Equals("Desativado", StringComparison.OrdinalIgnoreCase)
+            || startupType.Equals("Manual", StringComparison.OrdinalIgnoreCase)
+            || startupType.Equals("Automatico", StringComparison.OrdinalIgnoreCase);
     }
 
     private void KillSelected(IEnumerable<ProcessItem> items)
@@ -417,6 +556,51 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    private void RemoveLoadedProcesses()
+    {
+        foreach (var item in LoadedProfileProcesses.Where(p => p.IsSelected).ToList())
+        {
+            LoadedProfileProcesses.Remove(item);
+        }
+
+        SyncLoadedProfileFromCollections();
+        Log("Processos selecionados removidos do perfil carregado.");
+        if (HasScan())
+        {
+            Compare();
+        }
+    }
+
+    private void RemoveLoadedServices()
+    {
+        foreach (var item in LoadedProfileServices.Where(s => s.IsSelected).ToList())
+        {
+            LoadedProfileServices.Remove(item);
+        }
+
+        SyncLoadedProfileFromCollections();
+        Log("Servicos selecionados removidos do perfil carregado.");
+        if (HasScan())
+        {
+            Compare();
+        }
+    }
+
+    private void RemoveLoadedStartupItems()
+    {
+        foreach (var item in LoadedProfileStartupItems.Where(s => s.IsSelected).ToList())
+        {
+            LoadedProfileStartupItems.Remove(item);
+        }
+
+        SyncLoadedProfileFromCollections();
+        Log("Itens de inicializacao selecionados removidos do perfil carregado.");
+        if (HasScan())
+        {
+            Compare();
+        }
+    }
+
     private void AddPending(PendingActionType type, string kind, string name, string description)
     {
         PendingActions.Add(new PendingAction
@@ -473,6 +657,25 @@ public sealed class MainViewModel : ObservableObject
         _currentProfile.Services = Services.ToList();
         _currentProfile.StartupItems = StartupItems.ToList();
         _currentProfile.CreatedAt = DateTime.Now;
+    }
+
+    private void RefreshLoadedProfileCollections()
+    {
+        LoadedProfileProcesses.ReplaceWith(_loadedProfile?.Processes ?? []);
+        LoadedProfileServices.ReplaceWith(_loadedProfile?.Services ?? []);
+        LoadedProfileStartupItems.ReplaceWith(_loadedProfile?.StartupItems ?? []);
+    }
+
+    private void SyncLoadedProfileFromCollections()
+    {
+        if (_loadedProfile is null)
+        {
+            return;
+        }
+
+        _loadedProfile.Processes = LoadedProfileProcesses.ToList();
+        _loadedProfile.Services = LoadedProfileServices.ToList();
+        _loadedProfile.StartupItems = LoadedProfileStartupItems.ToList();
     }
 
     private void RefreshComparison()
